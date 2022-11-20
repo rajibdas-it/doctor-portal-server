@@ -21,6 +21,23 @@ const client = new MongoClient(uri, {
   serverApi: ServerApiVersion.v1,
 });
 
+function verifyJWT(req, res, next) {
+  // console.log("Inside verifyJWT Function", req.headers.authorization);
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).send({ message: "Unauthorized Access" });
+  }
+  const token = authHeader.split(" ")[1];
+
+  jwt.verify(token, process.env.ACCESS_TOKEN, function (error, decoded) {
+    if (error) {
+      return res.status(403).send({ message: "Forbidden Access" });
+    }
+    req.decoded = decoded;
+    next();
+  });
+}
+
 async function run() {
   try {
     const appointmentOptionsCollection = client
@@ -52,8 +69,13 @@ async function run() {
       res.send(options);
     });
 
-    app.get("/bookings", async (req, res) => {
+    app.get("/bookings", verifyJWT, async (req, res) => {
       const email = req.query.email;
+      const decodedEmail = req.decoded.email;
+      // console.log(email, decodedEmail);
+      if (email !== decodedEmail) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
       const query = { paitentEmail: email };
       const bookings = await bookingsCollection.find(query).toArray();
       res.send(bookings);
@@ -76,6 +98,25 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/jwt", async (req, res) => {
+      const email = req.query.email;
+      const query = { email: email };
+      const user = await usersCollection.findOne(query);
+      if (user) {
+        const token = jwt.sign({ email }, process.env.ACCESS_TOKEN, {
+          expiresIn: "1h",
+        });
+        return res.send({ accessToken: token });
+      }
+      return res.status(403).send({ accessToken: "" });
+    });
+
+    app.get("/users", async (req, res) => {
+      const query = {};
+      const users = await usersCollection.find(query).toArray();
+      res.send(users);
+    });
+
     app.post("/users", async (req, res) => {
       const user = req.body;
       const result = await usersCollection.insertOne(user);
@@ -90,16 +131,3 @@ run().catch((err) => console.log(err));
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
-
-// const bookingQuery = { appointmentDate: date };
-//       const alreadyBooked = await bookingsCollection
-//         .find(bookingQuery)
-//         .toArray();
-//       console.log(alreadyBooked);
-//       options.forEach((option) => {
-//         const optionBooked = alreadyBooked.filter(
-//           (book) => book.treatmentName === option.name
-//         );
-//         const bookedSlot = optionBooked.map((book) => book.appointmentShedhule);
-//         console.log(option.name, bookedSlot);
-//       });
