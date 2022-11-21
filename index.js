@@ -45,6 +45,7 @@ async function run() {
       .collection("appointmentOptions");
     const bookingsCollection = client.db("doctorPortal").collection("bookings");
     const usersCollection = client.db("doctorPortal").collection("users");
+    const doctorCollection = client.db("doctorPortal").collection("doctors");
 
     app.get("/appointmentOptions", async (req, res) => {
       const date = req.query.date;
@@ -67,6 +68,15 @@ async function run() {
         option.slots = remainingSlots;
       });
       res.send(options);
+    });
+
+    app.get("/appointmentSpecialty", async (req, res) => {
+      const query = {};
+      const result = await appointmentOptionsCollection
+        .find(query)
+        .project({ name: 1 })
+        .toArray();
+      res.send(result);
     });
 
     app.get("/bookings", verifyJWT, async (req, res) => {
@@ -151,6 +161,24 @@ async function run() {
         updatedDoc,
         options
       );
+      res.send(result);
+    });
+
+    app.post("/addadoctor", verifyJWT, async (req, res) => {
+      const doctor = req.body;
+      const result = await doctorCollection.insertOne(doctor);
+      res.send(result);
+    });
+    app.get("/managedoctor", verifyJWT, async (req, res) => {
+      const query = {};
+      const doctors = await doctorCollection.find(query).toArray();
+      res.send(doctors);
+    });
+
+    app.delete("/managedoctor/:id", verifyJWT, async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: ObjectId(id) };
+      const result = await doctorCollection.deleteOne(filter);
       res.send(result);
     });
   } finally {
