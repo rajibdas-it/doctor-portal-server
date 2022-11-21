@@ -47,6 +47,7 @@ async function run() {
     const bookingsCollection = client.db("doctorPortal").collection("bookings");
     const usersCollection = client.db("doctorPortal").collection("users");
     const doctorCollection = client.db("doctorPortal").collection("doctors");
+    const paymentsCollection = client.db("doctorPortal").collection("payments");
 
     const verifyAdmin = async (req, res, next) => {
       //console.log(req.decoded.email);
@@ -139,6 +140,24 @@ async function run() {
       res.send({
         clientSecret: paymentIntent.client_secret,
       });
+    });
+
+    app.post("/payments", async (req, res) => {
+      const payment = req.body;
+      const result = await paymentsCollection.insertOne(payment);
+      const id = payment.bookingId;
+      const filter = { _id: ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          paid: true,
+          transactionId: payment.transactionId,
+        },
+      };
+      const updatedResult = await bookingsCollection.updateOne(
+        filter,
+        updatedDoc
+      );
+      res.send(result);
     });
 
     app.get("/jwt", async (req, res) => {
@@ -237,3 +256,6 @@ run().catch((err) => console.log(err));
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
+
+
+module.exports = app;
