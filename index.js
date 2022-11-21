@@ -5,6 +5,7 @@ const cors = require("cors");
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const jwt = require("jsonwebtoken");
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
 
 app.use(cors());
 app.use(express.json());
@@ -47,6 +48,16 @@ async function run() {
     const usersCollection = client.db("doctorPortal").collection("users");
     const doctorCollection = client.db("doctorPortal").collection("doctors");
 
+    const verifyAdmin = async (req, res, next) => {
+      //console.log(req.decoded.email);
+      const decodedEmail = req.decoded.email;
+      const query = { email: decodedEmail };
+      const user = await usersCollection.findOne(query);
+      if (user?.role !== "admin") {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+      next();
+    };
     app.get("/appointmentOptions", async (req, res) => {
       const date = req.query.date;
       const query = {};
@@ -91,6 +102,13 @@ async function run() {
       res.send(bookings);
     });
 
+    app.get("/bookings/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: ObjectId(id) };
+      const result = await bookingsCollection.findOne(query);
+      res.send(result);
+    });
+
     app.post("/bookings", async (req, res) => {
       const booking = req.body;
       // console.log(booking);
@@ -106,6 +124,21 @@ async function run() {
       }
       const result = await bookingsCollection.insertOne(booking);
       res.send(result);
+    });
+
+    app.post("/create-payment-intent", async (req, res) => {
+      const booking = req.body;
+      const price = booking.price;
+      const amount = price * 100;
+
+      const paymentIntent = await stripe.paymentIntents.create({
+        currency: "usd",
+        amount: amount,
+        payment_method_types: ["card"],
+      });
+      res.send({
+        clientSecret: paymentIntent.client_secret,
+      });
     });
 
     app.get("/jwt", async (req, res) => {
@@ -140,14 +173,7 @@ async function run() {
       res.send(result);
     });
 
-    app.put("/users/admin/:id", verifyJWT, async (req, res) => {
-      const decodedEmail = req.decoded.email;
-      const query = { email: decodedEmail };
-      const user = await usersCollection.findOne(query);
-      if (user?.role !== "admin") {
-        return res.status(403).send({ message: "forbidden access" });
-      }
-
+    app.put("/users/admin/:id", verifyJWT, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const filter = { _id: ObjectId(id) };
       const options = { upsert: true };
@@ -164,23 +190,44 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/addadoctor", verifyJWT, async (req, res) => {
+    // app.get("/addPrice", async (req, res) => {
+    //   const filter = {};
+    //   const options = { upsert: true };
+    //   const updateDoc = {
+    //     $set: {
+    //       price: 99,
+    //     },
+    //   };
+    //   const result = await appointmentOptionsCollection.updateMany(
+    //     filter,
+    //     updateDoc,
+    //     options
+    //   );
+    //   res.send(result);
+    // });
+
+    app.post("/addadoctor", verifyJWT, verifyAdmin, async (req, res) => {
       const doctor = req.body;
       const result = await doctorCollection.insertOne(doctor);
       res.send(result);
     });
-    app.get("/managedoctor", verifyJWT, async (req, res) => {
+    app.get("/managedoctor", verifyJWT, verifyAdmin, async (req, res) => {
       const query = {};
       const doctors = await doctorCollection.find(query).toArray();
       res.send(doctors);
     });
 
-    app.delete("/managedoctor/:id", verifyJWT, async (req, res) => {
-      const id = req.params.id;
-      const filter = { _id: ObjectId(id) };
-      const result = await doctorCollection.deleteOne(filter);
-      res.send(result);
-    });
+    app.delete(
+      "/managedoctor/:id",
+      verifyJWT,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const filter = { _id: ObjectId(id) };
+        const result = await doctorCollection.deleteOne(filter);
+        res.send(result);
+      }
+    );
   } finally {
   }
 }
